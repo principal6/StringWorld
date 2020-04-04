@@ -20,7 +20,11 @@ public:
 		StartUp(); 
 		Connect(ServerIP);
 	}
-	~CClient() { CleanUp(); }
+	~CClient() 
+	{
+		Leave();
+		CleanUp(); 
+	}
 
 public:
 	bool Enter(const char* StringID)
@@ -51,6 +55,21 @@ public:
 		return false;
 	}
 
+	bool Leave()
+	{
+		if (Send(EClientPacketType::Leave, '!'))
+		{
+			m_bLeft = true;
+			return true;
+		}
+		return false;
+	}
+
+	void Input(EInput eInput)
+	{
+		Send(EClientPacketType::Input, (char)eInput);
+	}
+
 	void Chat(const char* Content)
 	{
 		int ContentLength{ (int)strlen(Content) };
@@ -65,21 +84,16 @@ private:
 	void _LogChat(const char* Content, bool bIsMyChat = false)
 	{
 		std::string _Content{ (bIsMyChat) ? m_MyStringID.String : Content };
+		SChatText Chat{};
 		if (bIsMyChat)
 		{
+			Chat.bIsLocal = true;
+
 			_Content += ": ";
 			_Content += Content;
 		}
-
-		SChatText Chat{};
-		memcpy(Chat.String, &_Content[0], min((int)_Content.size(), KChatTextSize));
+		memcpy(Chat.String, &_Content[0], min((int)_Content.size(), KChatTextSize));		
 		m_vChatLog.emplace_back(Chat);
-	}
-
-public:
-	void Input(EInput eInput)
-	{
-		Send(EClientPacketType::Input, (char)eInput);
 	}
 
 private:
@@ -206,15 +220,26 @@ public:
 		return false;
 	}
 
+public:
 	bool IsTimedOut()
 	{
 		return (m_TimeOutCount >= 3);
+	}
+
+	bool IsLeft()
+	{
+		return m_bLeft;
 	}
 
 public:
 	const SClientDatum& GetMyDatum() const
 	{
 		return m_MyDatum;
+	}
+
+	const SStringID& GetMyStringID() const
+	{
+		return m_MyStringID;
 	}
 
 	const std::vector<SClientDatum>& GetClientData() const
@@ -269,6 +294,7 @@ private:
 
 private:
 	bool m_bStartUp{};
+	bool m_bLeft{};
 	bool m_bSocketCreated{};
 	SOCKET m_Socket{};
 	u_short m_Port{};

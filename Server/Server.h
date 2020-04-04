@@ -5,9 +5,17 @@
 #include <WinSock2.h>
 #include <iostream>
 #include <vector>
+#include <string>
 #include <unordered_map>
-#include <thread>
+#include <mutex>
 #include "SharedDefinitions.h"
+
+struct SInternalClientData
+{
+	SOCKADDR_IN Address{};
+	SStringID StringID{};
+	short TimeOutCounter{};
+};
 
 class CServer
 {
@@ -83,18 +91,25 @@ public:
 
 					if (m_umapClientStringIDtoID.find(StringID) == m_umapClientStringIDtoID.end())
 					{
-						ID_t NewClientID{ m_IDCounter };
-						++m_IDCounter;
+						ID_t NewClientID{ _GetNextClientID() };
 
-						m_vClients.emplace_back(Client);
-						m_vClientData.emplace_back();
-						m_vClientStringIDs.emplace_back();
-						memcpy(&m_vClientStringIDs.back(), StringID, KStringIDSize); // Save StringID
-						m_vClientData.back().ID = NewClientID;
+						m_Mutex.lock();
+						{
+							++m_CurrentClientCount;
 
-						m_umapClientStringIDtoID[StringID] = NewClientID;
-						m_umapClientIDtoIP[NewClientID] = Client.sin_addr.S_un.S_addr;
-						m_umapClientIDtoIndex[NewClientID] = m_vClientData.size() - 1;
+							if (NewClientID >= m_vClientData.size())
+							{
+								m_vClientData.emplace_back();
+								m_vClientInetrnalData.emplace_back();
+							}
+							m_vClientData[NewClientID].ID = NewClientID;
+							m_vClientInetrnalData[NewClientID].Address = Client;
+							memcpy(&m_vClientInetrnalData[NewClientID].StringID, StringID, KStringIDSize); // Save StringID
+
+							m_umapClientStringIDtoID[StringID] = NewClientID;
+							m_umapClientIDtoIP[NewClientID] = Client.sin_addr.S_un.S_addr;
+						}
+						m_Mutex.unlock();
 
 						CByteData IDBytes{};
 						IDBytes.Append(NewClientID);
@@ -107,52 +122,59 @@ public:
 				}
 				else
 				{
+					if (m_CurrentClientCount == 0) return;
+
 					ID_t ClientID{};
 					memcpy(&ClientID, ByteData.Get(1), sizeof(ID_t));
-					size_t ClientIndex{ m_umapClientIDtoIndex.at(ClientID) };
-					if (m_umapClientIDtoIP.at(ClientID) != Client.sin_addr.S_un.S_addr) return; // Validation check
+					if (m_umapClientIDtoIP.find(ClientID) == m_umapClientIDtoIP.end()) return; // Non-existing ID
+					if (m_umapClientIDtoIP.at(ClientID) != Client.sin_addr.S_un.S_addr) return; // ID-IP validation
 
+					m_vClientInetrnalData[ClientID].TimeOutCounter = 0; // Initialize time-out counter
+					
 					auto WithoutHeader{ ByteData.Get(3) };
 					auto WithoutHeaderSize{ ByteData.Size(3) };
 					switch (eType)
 					{
 					case EClientPacketType::Leave:
+						KickOut(ClientID);
 						break;
 					case EClientPacketType::Input:
-						if (WithoutHeader[0] == (char)EInput::Right)
+					{
+						m_Mutex.lock();
 						{
-							++m_vClientData[ClientIndex].X;
+							if (WithoutHeader[0] == (char)EInput::Right)
+							{
+								++m_vClientData[ClientID].X;
+							}
+							else if (WithoutHeader[0] == (char)EInput::Left)
+							{
+								--m_vClientData[ClientID].X;
+							}
+							else if (WithoutHeader[0] == (char)EInput::Up)
+							{
+								--m_vClientData[ClientID].Y;
+							}
+							else if (WithoutHeader[0] == (char)EInput::Down)
+							{
+								++m_vClientData[ClientID].Y;
+							}
 						}
-						else if (WithoutHeader[0] == (char)EInput::Left)
-						{
-							--m_vClientData[ClientIndex].X;
-						}
-						else if (WithoutHeader[0] == (char)EInput::Up)
-						{
-							--m_vClientData[ClientIndex].Y;
-						}
-						else if (WithoutHeader[0] == (char)EInput::Down)
-						{
-							++m_vClientData[ClientIndex].Y;
-						}
+						m_Mutex.unlock();
 						break;
+					}
 					case EClientPacketType::Chat:
 					{
 						CByteData Chat{};
 						Chat.Append(ClientID);
 						Chat.Append(WithoutHeader, WithoutHeaderSize);
 						// Broadcast chat to all the clients
-						for (auto& ClientEntry : m_vClients)
+						for (auto& ClientInternal : m_vClientInetrnalData)
 						{
-							Send(EServerPacketType::Chat, Chat.Get(), Chat.Size(), &ClientEntry);
+							Send(EServerPacketType::Chat, Chat.Get(), Chat.Size(), &ClientInternal.Address);
 						}
 						break;
 					}
 					default:
-						const auto& IPv4{ Client.sin_addr.S_un.S_un_b };
-						printf("[ID %d | IP %d.%d.%d.%d | BC %d]: %s\n",
-							ClientID, IPv4.s_b1, IPv4.s_b2, IPv4.s_b3, IPv4.s_b4, ReceivedByteCount, WithoutHeader);
-
 						// echo
 						if (bShouldEcho) Send(EServerPacketType::Echo, WithoutHeader, WithoutHeaderSize, &Client);
 						break;
@@ -169,18 +191,65 @@ public:
 		if (m_vClientData.empty()) return false;
 
 		// Data for update
-		CByteData ByteData{};
-		ByteData.Append((char)EServerPacketType::Update);
-		ByteData.Append((short)m_vClientData.size()); // Client count
-		ByteData.Append(&m_vClientData[0], (int)(m_vClientData.size() * sizeof(SClientDatum)));
+		m_UpdateByteData.Clear();
+		m_UpdateByteData.Append((char)EServerPacketType::Update);
+		m_UpdateByteData.Append((short)m_vClientData.size()); // Client count
+		m_UpdateByteData.Append(&m_vClientData[0], (int)(m_vClientData.size() * sizeof(SClientDatum)));
 		
 		// Broadcast updated data to all the clients
-		for (auto& Client : m_vClients)
+		for (size_t i = 0; i < m_vClientInetrnalData.size(); ++i)
 		{
-			sendto(m_Socket, ByteData.Get(), ByteData.Size(), 0, (sockaddr*)&Client, sizeof(Client));
+			auto& Client{ m_vClientData[i] };
+			if (Client.ID == KInvalidID) continue;
+
+			auto& ClientInternal{ m_vClientInetrnalData[i] };
+			sendto(m_Socket, m_UpdateByteData.Get(), m_UpdateByteData.Size(), 0, (sockaddr*)&ClientInternal, sizeof(ClientInternal));
 		}
 
 		return true;
+	}
+
+	void IncreaseTimeOutCounter()
+	{
+		for (size_t i = 0; i < m_vClientInetrnalData.size(); ++i)
+		{
+			auto& Client{ m_vClientData[i] };
+			if (Client.ID == KInvalidID) continue;
+
+			auto& ClientInternal{ m_vClientInetrnalData[i] };
+			++ClientInternal.TimeOutCounter;
+			if (ClientInternal.TimeOutCounter >= KClientTimeOutTick) KickOut(Client.ID);
+		}
+	}
+
+	void KickOut(ID_t ID)
+	{
+		if (m_vClientData[ID].ID == KInvalidID) return;
+		
+		m_Mutex.lock();
+		{
+			m_umapClientStringIDtoID.erase(m_vClientInetrnalData[ID].StringID.String);
+			m_umapClientIDtoIP.erase(ID);
+			m_vClientData[ID].ID = KInvalidID;
+			--m_CurrentClientCount;
+		}
+		m_Mutex.unlock();
+	}
+
+private:
+	short _GetNextClientID() const
+	{
+		short NextID{ KInvalidID };
+		for (short i = 0; i < (short)m_vClientData.size(); ++i)
+		{
+			if (m_vClientData[i].ID == KInvalidID)
+			{
+				NextID = i;
+				break;
+			}
+		}
+		if (NextID == KInvalidID) NextID = (short)m_vClientData.size();
+		return NextID;
 	}
 
 private:
@@ -196,7 +265,7 @@ private:
 	}
 
 public:
-	void DisplayInfo()
+	void _DisplayInfo()
 	{
 		auto& IPv4{ m_HostAddr.sin_addr.S_un.S_un_b };
 		printf("========================================\n");
@@ -204,6 +273,10 @@ public:
 		printf(" Service Port: %d\n", KPort);
 		printf("========================================\n");
 	}
+
+	const std::string& GetHostIPString() const { return m_HostIPString; }
+	u_short GetServicePort() const { return KPort; }
+	short GetCurrentClientCount() const { return m_CurrentClientCount; }
 
 private:
 	void StartUp()
@@ -217,10 +290,10 @@ private:
 		}
 		m_bStartUp = true;
 
-		m_bGotHost = GetHostIP();
+		m_bGotHost = _GetHostIP();
 	}
 
-	bool GetHostIP()
+	bool _GetHostIP()
 	{
 		SOCKET Socket{ socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP) };
 		if (Socket == SOCKET_ERROR)
@@ -250,11 +323,21 @@ private:
 		{
 			printf("%s closesocket(): %d\n", KFailureHead, WSAGetLastError());
 		}
+		
+		m_HostIPString.clear();
+		m_HostIPString += std::to_string((int)(m_HostAddr.sin_addr.S_un.S_un_b.s_b1)) + ".";
+		m_HostIPString += std::to_string((int)(m_HostAddr.sin_addr.S_un.S_un_b.s_b2)) + ".";
+		m_HostIPString += std::to_string((int)(m_HostAddr.sin_addr.S_un.S_un_b.s_b3)) + ".";
+		m_HostIPString += std::to_string((int)(m_HostAddr.sin_addr.S_un.S_un_b.s_b4));
+
 		return true;
 	}
 
+public:
 	void CleanUp()
 	{
+		Close();
+
 		if (m_bSocketCreated)
 		{
 			if (closesocket(m_Socket) == SOCKET_ERROR)
@@ -284,7 +367,8 @@ private:
 private:
 	static constexpr const char* KFailureHead{ "[Failed]" };
 	static constexpr int KBufferSize{ 2048 };
-	static constexpr int KPort{ 9999 };
+	static constexpr u_short KPort{ 9999 };
+	static constexpr short KClientTimeOutTick{ 600 };
 
 private:
 	bool m_bStartUp{};
@@ -296,16 +380,20 @@ private:
 	SOCKET m_Socket{};
 	bool m_bSocketCreated{};
 	SOCKADDR_IN m_HostAddr{};
+	std::string m_HostIPString{};
 
 private:
 	char m_Buffer[KBufferSize]{};
 
+// Critical section
 private:
-	ID_t m_IDCounter{};
-	std::unordered_map<ID_t, size_t> m_umapClientIDtoIndex{};
-	std::unordered_map<ID_t, ULONG> m_umapClientIDtoIP{}; // For validation
-	std::unordered_map<std::string, ID_t> m_umapClientStringIDtoID{};
+	short m_CurrentClientCount{};
+	std::unordered_map<ID_t, ULONG> m_umapClientIDtoIP{}; // For ID-IP validation
+	std::unordered_map<std::string, ID_t> m_umapClientStringIDtoID{}; // For StringID collision test
+	std::vector<SInternalClientData> m_vClientInetrnalData{};
 	std::vector<SClientDatum> m_vClientData{};
-	std::vector<SOCKADDR_IN> m_vClients{};
-	std::vector<SStringID> m_vClientStringIDs{};
+	std::mutex m_Mutex{};
+
+private:
+	CByteData m_UpdateByteData{};
 };

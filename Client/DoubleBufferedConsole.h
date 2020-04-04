@@ -2,6 +2,7 @@
 
 #include <Windows.h>
 #include <iostream>
+#include <string>
 #include <conio.h>
 
 enum class EArrowKeys
@@ -114,6 +115,17 @@ public:
 	void PrintHString(short X, short Y, const char* String, int StringLength = -1)
 	{
 		PrintHString(X, Y, String, m_eDefaultForeground, StringLength);
+	}
+
+	void PrintHString(short X, short Y, const std::string& String)
+	{
+		PrintHString(X, Y, String.c_str(), m_eDefaultForeground, (int)String.size());
+	}
+
+	void PrintHString(short X, short Y, short Short)
+	{
+		std::string String{ std::to_string((int)Short) };
+		PrintHString(X, Y, String.c_str(), m_eDefaultForeground, (int)String.size());
 	}
 
 	void PrintVString(short X, short Y, const char* String, EBackgroundColor eBackground, EForegroundColor eForeground, int StringLength = -1)
@@ -253,17 +265,11 @@ public:
 	}
 
 public:
-	bool GetCommand(short X, short Y)
+	bool GetCommand()
 	{
-		COORD Coord{ X, Y };
-		DWORD Written{};
-		SetConsoleCursorPosition(m_FrontBuffer, Coord);
-		WriteConsoleOutputCharacterA(m_FrontBuffer, "> ", 2, Coord, &Written);
-		Coord.X += 2;
-
-		SetConsoleCursorPosition(m_FrontBuffer, Coord);
-		memset(m_CommandBuffer, 0, KCommandBufferSize);
-		int ReadBytes{};
+		// Initialize variables
+		m_GettingCommand = true;
+		m_CommandReadBytes = 0; 
 		int CurrentLogIndex{ m_CommandLogIndex };
 		while (true)
 		{
@@ -282,7 +288,7 @@ public:
 						if (CurrentLogIndex < 0) CurrentLogIndex = KCommandLogSize - 1;
 
 						memcpy(m_CommandBuffer, m_CommandLog[CurrentLogIndex], strlen(m_CommandLog[CurrentLogIndex]));
-						ReadBytes = (int)strlen(m_CommandBuffer);
+						m_CommandReadBytes = (int)strlen(m_CommandBuffer);
 						ShouldRead = false;
 					}
 					else if (arrow == 80)
@@ -293,7 +299,7 @@ public:
 						if (CurrentLogIndex >= KCommandLogSize) CurrentLogIndex = 0;
 
 						memcpy(m_CommandBuffer, m_CommandLog[CurrentLogIndex], strlen(m_CommandLog[CurrentLogIndex]));
-						ReadBytes = (int)strlen(m_CommandBuffer);
+						m_CommandReadBytes = (int)strlen(m_CommandBuffer);
 						ShouldRead = false;
 					}
 					else
@@ -304,29 +310,29 @@ public:
 				if (Key == VK_ESCAPE)
 				{
 					memset(m_CommandBuffer, 0, KCommandBufferSize);
-					ReadBytes = 0;
+					m_CommandReadBytes = 0;
 					break;
 				}
-				if (Key == VK_RETURN) break;
+				if (Key == VK_RETURN)
+				{
+					break;
+				}
 				if (Key == VK_BACK)
 				{
-					if (ReadBytes)
+					if (m_CommandReadBytes)
 					{
-						--ReadBytes;
-						m_CommandBuffer[ReadBytes] = 0;
+						--m_CommandReadBytes;
+						m_CommandBuffer[m_CommandReadBytes] = 0;
 					}
 					ShouldRead = false;
 				}
 
 				if (ShouldRead)
 				{
-					m_CommandBuffer[ReadBytes] = Key;
-					++ReadBytes;
+					m_CommandBuffer[m_CommandReadBytes] = Key;
+					++m_CommandReadBytes;
 				}
 			}
-
-			WriteConsoleOutputCharacterA(m_FrontBuffer, m_CommandBuffer, m_Width, Coord, &Written);
-			SetConsoleCursorPosition(m_FrontBuffer, COORD{ (short)(Coord.X + ReadBytes), Y });
 		}
 
 		for (auto& ch : m_CommandBuffer)
@@ -339,9 +345,26 @@ public:
 			strcpy_s(m_CommandLog[m_CommandLogIndex], m_CommandBuffer);
 			++m_CommandLogIndex;
 			if (m_CommandLogIndex >= KCommandLogSize) m_CommandLogIndex = 0;
+			memset(m_CommandBuffer, 0, KCommandBufferSize); // Initialize
 		}
 
-		return ReadBytes;
+		m_GettingCommand = false;
+		return m_CommandReadBytes;
+	}
+
+	// Print the command currently being typed onto back-buffer
+	void PrintCommand(short X, short Y)
+	{
+		if (!m_GettingCommand) return;
+
+		COORD Coord{ X, Y };
+		DWORD Written{};
+		SetConsoleCursorPosition(m_BackBuffer, Coord);
+		WriteConsoleOutputCharacterA(m_BackBuffer, "> ", 2, Coord, &Written);
+		Coord.X += 2;
+
+		WriteConsoleOutputCharacterA(m_BackBuffer, m_CommandBuffer, m_Width, Coord, &Written);
+		SetConsoleCursorPosition(m_BackBuffer, COORD{ (short)(Coord.X + m_CommandReadBytes), Y });
 	}
 
 	const char* GetLastCommand()
@@ -388,10 +411,14 @@ private:
 		CONSOLE_SCREEN_BUFFER_INFOEX BufferInfo{};
 		BufferInfo.cbSize = sizeof(CONSOLE_SCREEN_BUFFER_INFOEX);
 		GetConsoleScreenBufferInfoEx(m_FrontBuffer, &BufferInfo);
-		BufferInfo.srWindow.Right = BufferInfo.dwSize.X = m_Width;
-		BufferInfo.srWindow.Bottom = BufferInfo.dwSize.Y = m_Height;
+		BufferInfo.dwMaximumWindowSize.X = BufferInfo.srWindow.Right = BufferInfo.dwSize.X = m_Width;
+		BufferInfo.dwMaximumWindowSize.Y = BufferInfo.srWindow.Bottom = BufferInfo.dwSize.Y = m_Height;
 		SetConsoleScreenBufferInfoEx(m_FrontBuffer, &BufferInfo);
 		SetConsoleScreenBufferInfoEx(m_BackBuffer, &BufferInfo);
+
+		CONSOLE_CURSOR_INFO CursorInfo{ sizeof(CONSOLE_CURSOR_INFO), false };
+		SetConsoleCursorInfo(m_FrontBuffer, &CursorInfo);
+		SetConsoleCursorInfo(m_BackBuffer, &CursorInfo);
 	}
 
 	void CleanUp()
@@ -421,4 +448,6 @@ private:
 	char m_CommandBuffer[KCommandBufferSize]{};
 	char m_CommandLog[KCommandLogSize][KCommandBufferSize]{};
 	short m_CommandLogIndex{};
+	short m_CommandReadBytes{};
+	bool m_GettingCommand{};
 };

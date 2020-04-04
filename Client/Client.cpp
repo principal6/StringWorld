@@ -1,13 +1,25 @@
 #include "Client.h"
 #include "DoubleBufferedConsole.h"
-#include <string>
 #include <thread>
+
+static CClient Client{ 9999, timeval{ 2, 0 } };
+
+static BOOL ConsoleEventHandler(DWORD event) {
+
+	switch (event) {
+	case CTRL_C_EVENT:
+	case CTRL_CLOSE_EVENT:
+		Client.Leave();
+		break;
+	}
+	return TRUE;
+}
 
 int main()
 {
-	CClient Client{ 9999, timeval{ 5, 0 } };
+	SetConsoleCtrlHandler(ConsoleEventHandler, TRUE);
+	
 	char Buffer[2048]{};
-
 	std::cout << "Enter Server IP: ";
 	std::cin >> Buffer;
 	if (!Client.Connect(Buffer))
@@ -46,47 +58,61 @@ int main()
 		{
 			while (true)
 			{
-				if (Client.IsTimedOut()) break;
+				if (Client.IsTimedOut() || Client.IsLeft()) break;
+
 				Client.Listen();
+			}
+		}
+	};
+
+	std::thread thr_input{
+		[&]()
+		{
+			while (true)
+			{
+				if (Client.IsTimedOut() || Client.IsLeft()) break;
+
+				if (Console.HitKey())
+				{
+					EArrowKeys ArrowKey{ Console.GetHitArrowKey() };
+					if (ArrowKey == EArrowKeys::Left)
+					{
+						Client.Input(EInput::Left);
+					}
+					else if (ArrowKey == EArrowKeys::Right)
+					{
+						Client.Input(EInput::Right);
+					}
+					else if (ArrowKey == EArrowKeys::Up)
+					{
+						Client.Input(EInput::Up);
+					}
+					else if (ArrowKey == EArrowKeys::Down)
+					{
+						Client.Input(EInput::Down);
+					}
+
+					int Key{ Console.GetHitKey() };
+					if (Key == VK_ESCAPE)
+					{
+						Client.Leave();
+						break;
+					}
+					else if (Key == VK_RETURN)
+					{
+						if (Console.GetCommand())
+						{
+							Client.Chat(Console.GetLastCommand());
+						}
+					}
+				}
 			}
 		}
 	};
 
 	while (true)
 	{
-		if (Console.HitKey())
-		{
-			EArrowKeys ArrowKey{ Console.GetHitArrowKey() };
-			if (ArrowKey == EArrowKeys::Left)
-			{
-				Client.Input(EInput::Left);
-			}
-			else if (ArrowKey == EArrowKeys::Right)
-			{
-				Client.Input(EInput::Right);
-			}
-			else if (ArrowKey == EArrowKeys::Up)
-			{
-				Client.Input(EInput::Up);
-			}
-			else if (ArrowKey == EArrowKeys::Down)
-			{
-				Client.Input(EInput::Down);
-			}
-
-			int Key{ Console.GetHitKey() };
-			if (Key == VK_ESCAPE)
-			{
-				break;
-			}
-			else if (Key == VK_RETURN)
-			{
-				if (Console.GetCommand(0, KHeight - 1))
-				{
-					Client.Chat(Console.GetLastCommand());
-				}
-			}
-		}
+		if (Client.IsTimedOut() || Client.IsLeft()) break;
 
 		Console.Clear();
 
@@ -104,7 +130,14 @@ int main()
 			int Offset{ (ChatCount > KMaxLines) ? ChatCount - KMaxLines : 0 };
 			for (int i = Offset; i < ChatCount; ++i)
 			{
-				Console.PrintHString(70 + 1, 1 + i - Offset, vChatLog[i].String, 40 - 2);
+				if (vChatLog[i].bIsLocal)
+				{
+					Console.PrintHString(70 + 1, 1 + i - Offset, vChatLog[i].String, EForegroundColor::LightYellow, 40 - 2);
+				}
+				else
+				{
+					Console.PrintHString(70 + 1, 1 + i - Offset, vChatLog[i].String, EForegroundColor::Yellow, 40 - 2);
+				}
 			}
 		}
 
@@ -112,19 +145,25 @@ int main()
 		auto& MyData{ Client.GetMyDatum() };
 		for (auto& Client : vClientData)
 		{
+			if (Client.ID == KInvalidID) continue;
 			Console.PrintChar(Client.X, Client.Y, '@', EForegroundColor::Yellow);
 		}
 		Console.PrintChar(MyData.X, MyData.Y, '@', EForegroundColor::LightYellow);
 
-		Console.PrintChar(112, 1, 'X');
-		Console.PrintChar(112, 2, 'Y');
-		Console.PrintHString(114, 1, std::to_string(MyData.X).c_str());
-		Console.PrintHString(114, 2, std::to_string(MyData.Y).c_str());
+		Console.PrintHString(112, 1, "ID");
+		Console.PrintHString(115, 1, Client.GetMyStringID().String);
+
+		Console.PrintHString(112, 3, " X");
+		Console.PrintHString(112, 4, " Y");
+		Console.PrintHString(115, 3, MyData.X);
+		Console.PrintHString(115, 4, MyData.Y);
+		Console.PrintCommand(0, KHeight - 1);
 
 		Console.Render();
 	}
 
 	thr_listen.join();
+	thr_input.join();
 
 	return 0;
 }

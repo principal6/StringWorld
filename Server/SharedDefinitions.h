@@ -3,6 +3,8 @@
 #include <vector>
 
 using ID_t = short;
+static constexpr ID_t KInvalidID{ -1 };
+
 static constexpr int KStringIDSize{ 31 };
 struct SStringID
 {
@@ -12,6 +14,7 @@ struct SStringID
 static constexpr int KChatTextSize{ 63 };
 struct SChatText
 {
+	bool bIsLocal{ false };
 	char String[KChatTextSize + 1]{};
 };
 
@@ -42,7 +45,7 @@ enum class EInput : char
 
 struct SClientDatum
 {
-	ID_t ID{ -1 };
+	ID_t ID{ KInvalidID };
 	short X{};
 	short Y{};
 	short Padding{};
@@ -56,17 +59,24 @@ public:
 	~CByteData() {}
 
 public:
+	void Clear()
+	{
+		m_vBytes.clear();
+	}
+
 	void Append(char Input)
 	{
 		size_t OldSize{ m_vBytes.size() };
-		m_vBytes.resize(OldSize + sizeof(Input));
+		size_t NewSize{ OldSize + sizeof(Input) };
+		if (NewSize > m_vBytes.size()) m_vBytes.resize(NewSize);
 		memcpy(&m_vBytes[OldSize], &Input, sizeof(Input));
 	}
 
 	void Append(short Input)
 	{
 		size_t OldSize{ m_vBytes.size() };
-		m_vBytes.resize(OldSize + sizeof(Input));
+		size_t NewSize{ OldSize + sizeof(Input) };
+		if (NewSize > m_vBytes.size()) m_vBytes.resize(NewSize);
 		memcpy(&m_vBytes[OldSize], &Input, sizeof(Input));
 	}
 
@@ -74,8 +84,10 @@ public:
 	{
 		if (!Input) return;
 		if (InputSize == 0) return;
+
 		size_t OldSize{ m_vBytes.size() };
-		m_vBytes.resize(OldSize + InputSize);
+		size_t NewSize{ OldSize + InputSize };
+		if (NewSize > m_vBytes.size()) m_vBytes.resize(NewSize);
 		memcpy(&m_vBytes[OldSize], Input, InputSize);
 	}
 
