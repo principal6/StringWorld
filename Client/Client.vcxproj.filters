@@ -7,9 +7,9 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="ConsoleBase.h" />
     <ClInclude Include="Client.h" />
     <ClInclude Include="..\Server\SharedDefinitions.h" />
+    <ClInclude Include="DoubleBufferedConsole.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Client.cpp" />

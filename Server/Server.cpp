@@ -1,5 +1,6 @@
 #include "Server.h"
 #include <thread>
+#include <chrono>
 
 int main()
 {
@@ -7,19 +8,31 @@ int main()
 	Server.DisplayInfo();
 	Server.Open();
 
-	std::thread thr_listen{
+	std::chrono::steady_clock Clock{};
+	std::thread thr_net{
 		[&]()
 		{
+			long long PrevTimePoint{Clock.now().time_since_epoch().count()};
 			while (true)
 			{
 				if (Server.IsClosing()) break;
 				Server.Listen(true);
+
+				long long CurrTimePoint{ Clock.now().time_since_epoch().count() };
+				if (CurrTimePoint - PrevTimePoint > 30'000'000)
+				{
+					if (Server.Update())
+					{
+						//printf("Update - tick: %lld\n", CurrTimePoint / 1'000'000);
+					}
+					PrevTimePoint = CurrTimePoint;
+				}
 			}
 		}
 	};
 
 	char CmdBuffer[2048]{};
-	std::thread thr_work{
+	std::thread thr_command{
 		[&]()
 		{
 			while (true)
@@ -34,8 +47,8 @@ int main()
 		}
 	};
 
-	thr_listen.join();
-	thr_work.join();
+	thr_net.join();
+	thr_command.join();
 
 	return 0;
 }

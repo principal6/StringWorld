@@ -3,23 +3,49 @@
 #include <vector>
 
 using ID_t = short;
-static constexpr int KClientStringIDMaxSize{ 31 };
-
-enum class EClientPacketType
+static constexpr int KStringIDSize{ 31 };
+struct SStringID
 {
-	Enter,
-	Input,
-	Talk,
-	Leave,
+	char String[KStringIDSize + 1]{};
 };
 
-enum class EServerPacketType
+static constexpr int KChatTextSize{ 63 };
+struct SChatText
+{
+	char String[KChatTextSize + 1]{};
+};
+
+enum class EClientPacketType : char
+{
+	Enter,
+	Leave,
+	Input,
+	Chat,
+};
+
+enum class EServerPacketType : char
 {
 	Echo,
 	EnterPermission,
-	ClientsData,
-	Talk,
 	Denial,
+	Update,
+	Chat,
+};
+
+enum class EInput : char
+{
+	Left,
+	Right,
+	Up,
+	Down,
+};
+
+struct SClientDatum
+{
+	ID_t ID{ -1 };
+	short X{};
+	short Y{};
+	short Padding{};
 };
 
 class CByteData
@@ -44,7 +70,7 @@ public:
 		memcpy(&m_vBytes[OldSize], &Input, sizeof(Input));
 	}
 
-	void Append(const char* Input, int InputSize)
+	void Append(const void* Input, int InputSize)
 	{
 		if (!Input) return;
 		if (InputSize == 0) return;

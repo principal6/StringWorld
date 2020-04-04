@@ -1,11 +1,11 @@
 #include "Client.h"
-#include "ConsoleBase.h"
+#include "DoubleBufferedConsole.h"
 #include <string>
 #include <thread>
 
 int main()
 {
-	CClient Client{ 9999, timeval{ 2, 0 } };
+	CClient Client{ 9999, timeval{ 5, 0 } };
 	char Buffer[2048]{};
 
 	std::cout << "Enter Server IP: ";
@@ -35,6 +35,12 @@ int main()
 		}
 	}
 
+	static constexpr int KWidth{ 130 };
+	static constexpr int KHeight{ 30 };
+	CDoubleBufferedConsole Console{ KWidth, KHeight, "StringWorld" };
+	Console.SetClearBackground(EBackgroundColor::Black);
+	Console.SetDefaultForeground(EForegroundColor::LightYellow);
+
 	std::thread thr_listen{
 		[&]()
 		{
@@ -46,77 +52,79 @@ int main()
 		}
 	};
 
-	std::thread thr_send{
-		[&]()
-		{
-			while (true)
-			{
-				fgets(Buffer, 2048, stdin);
-				for (auto& ch : Buffer)
-				{
-					if (ch == '\n') ch = 0;
-				}
-				if (strncmp(Buffer, "QUIT", 4) == 0) break;
-				Client.Talk(Buffer);
-			}
-		}
-	};
-
-	thr_listen.join();
-	thr_send.join();
-
-	return 0;
-}
-
-int fmain()
-{
-	CConsoleBase Base{ 85, 14, "BASE" };
-	Base.SetFont(EFonts::Terminal, 8, 12);
-	Base.SetColorTheme(RGB(20, 20, 20), RGB(0, 180, 80));
-	int X{}, Y{};
-	
 	while (true)
 	{
-		if (GetAsyncKeyState(VK_LMENU) < 0 && GetAsyncKeyState(VK_RETURN) < 0)
+		if (Console.HitKey())
 		{
-			Base.Reset();
-		}
-		if (Base.HitKey())
-		{
-			EArrowKeys ArrowKey{ Base.GetHitArrowKey() };
-			if (ArrowKey == EArrowKeys::Right) ++X;
-			if (ArrowKey == EArrowKeys::Left) --X;
-			if (ArrowKey == EArrowKeys::Down) ++Y;
-			if (ArrowKey == EArrowKeys::Up) --Y;
+			EArrowKeys ArrowKey{ Console.GetHitArrowKey() };
+			if (ArrowKey == EArrowKeys::Left)
+			{
+				Client.Input(EInput::Left);
+			}
+			else if (ArrowKey == EArrowKeys::Right)
+			{
+				Client.Input(EInput::Right);
+			}
+			else if (ArrowKey == EArrowKeys::Up)
+			{
+				Client.Input(EInput::Up);
+			}
+			else if (ArrowKey == EArrowKeys::Down)
+			{
+				Client.Input(EInput::Down);
+			}
 
-			int Key{ Base.GetHitKey() };
+			int Key{ Console.GetHitKey() };
 			if (Key == VK_ESCAPE)
 			{
 				break;
 			}
 			else if (Key == VK_RETURN)
 			{
-				if (Base.GetCommand(0, 13))
+				if (Console.GetCommand(0, KHeight - 1))
 				{
-					std::string Command{ Base.GetLastCommand() };
+					Client.Chat(Console.GetLastCommand());
 				}
 			}
 		}
 
-		Base.PrintBox(42, 0, 32, 10, '-', '|');
-		Base.PrintLog(43, 1, 32, 10);
+		Console.Clear();
 
-		Base.PrintBox(0, 0, 40, 10, '-', '|');
-		Base.PrintChar(X, Y, '@');
+		//Console.FillBox(5, 5, 7, 10, '~', EBackgroundColor::Cyan, EForegroundColor::White);
+		Console.PrintBox(0, 0, 70, KHeight - 1, ' ', EBackgroundColor::DarkGray, EForegroundColor::Black);
 
-		Base.PrintString(78, 0, "[C]");
-		Base.PrintString(78, 1, "[I]");
-		Base.PrintString(78, 2, "[Q]");
-		Base.PrintString(78, 5, ("X:" + std::to_string(X)).c_str());
-		Base.PrintString(78, 6, ("Y:" + std::to_string(Y)).c_str());
+		Console.PrintBox(70, 0, 40, KHeight - 1, ' ', EBackgroundColor::DarkGray, EForegroundColor::Black);
+		//Console.PrintCommandLog(70, 0, 40, 29);		
+		if (Client.HasChatLog())
+		{
+			static constexpr int KMaxLines{ KHeight - 1 - 2 };
 
-		Base.Render();
+			auto& vChatLog{ Client.GetChatLog() };
+			int ChatCount{ (int)vChatLog.size() };
+			int Offset{ (ChatCount > KMaxLines) ? ChatCount - KMaxLines : 0 };
+			for (int i = Offset; i < ChatCount; ++i)
+			{
+				Console.PrintHString(70 + 1, 1 + i - Offset, vChatLog[i].String, 40 - 2);
+			}
+		}
+
+		auto& vClientData{ Client.GetClientData() };
+		auto& MyData{ Client.GetMyDatum() };
+		for (auto& Client : vClientData)
+		{
+			Console.PrintChar(Client.X, Client.Y, '@', EForegroundColor::Yellow);
+		}
+		Console.PrintChar(MyData.X, MyData.Y, '@', EForegroundColor::LightYellow);
+
+		Console.PrintChar(112, 1, 'X');
+		Console.PrintChar(112, 2, 'Y');
+		Console.PrintHString(114, 1, std::to_string(MyData.X).c_str());
+		Console.PrintHString(114, 2, std::to_string(MyData.Y).c_str());
+
+		Console.Render();
 	}
+
+	thr_listen.join();
 
 	return 0;
 }
