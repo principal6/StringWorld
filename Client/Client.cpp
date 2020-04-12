@@ -1,5 +1,5 @@
 #include "Client.h"
-#include "DoubleBufferedConsole.h"
+#include "SingleBufferedConsole.h"
 #include <thread>
 
 static CClient Client{ 9999, timeval{ 2, 0 } };
@@ -49,7 +49,7 @@ int main()
 
 	static constexpr int KWidth{ 130 };
 	static constexpr int KHeight{ 30 };
-	CDoubleBufferedConsole Console{ KWidth, KHeight, "StringWorld" };
+	CSingleBufferedConsole Console{ KWidth, KHeight, "StringWorld", ECommandLinePosition::Bottom };
 	Console.SetClearBackground(EBackgroundColor::Black);
 	Console.SetDefaultForeground(EForegroundColor::LightYellow);
 
@@ -74,35 +74,34 @@ int main()
 
 				if (Console.HitKey())
 				{
-					EArrowKeys ArrowKey{ Console.GetHitArrowKey() };
-					if (ArrowKey == EArrowKeys::Left)
+					if (Console.IsHitKey(EArrowKeys::Left))
 					{
 						Client.Input(EInput::Left);
 					}
-					else if (ArrowKey == EArrowKeys::Right)
+					else if (Console.IsHitKey(EArrowKeys::Right))
 					{
 						Client.Input(EInput::Right);
 					}
-					else if (ArrowKey == EArrowKeys::Up)
+					else if (Console.IsHitKey(EArrowKeys::Up))
 					{
 						Client.Input(EInput::Up);
 					}
-					else if (ArrowKey == EArrowKeys::Down)
+					else if (Console.IsHitKey(EArrowKeys::Down))
 					{
 						Client.Input(EInput::Down);
 					}
-
-					int Key{ Console.GetHitKey() };
-					if (Key == VK_ESCAPE)
+					else if (Console.IsHitKey(VK_RETURN))
 					{
-						Client.Leave();
-						break;
-					}
-					else if (Key == VK_RETURN)
-					{
-						if (Console.GetCommand())
+						if (Console.ReadCommand())
 						{
-							Client.Chat(Console.GetLastCommand());
+							if (Console.IsLastCommand("/quit"))
+							{
+								Client.Leave();
+							}
+							else
+							{
+								Client.Chat(Console.GetLastCommand());
+							}
 						}
 					}
 				}
@@ -157,7 +156,6 @@ int main()
 		Console.PrintHString(112, 4, " Y");
 		Console.PrintHString(115, 3, MyData.X);
 		Console.PrintHString(115, 4, MyData.Y);
-		Console.PrintCommand(0, KHeight - 1);
 
 		Console.Render();
 	}

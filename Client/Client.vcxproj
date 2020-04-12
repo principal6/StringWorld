@@ -144,7 +144,7 @@
   <ItemGroup>
     <ClInclude Include="..\Server\SharedDefinitions.h" />
     <ClInclude Include="Client.h" />
-    <ClInclude Include="DoubleBufferedConsole.h" />
+    <ClInclude Include="SingleBufferedConsole.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

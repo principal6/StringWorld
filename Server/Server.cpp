@@ -1,5 +1,5 @@
 #include "Server.h"
-#include "../Client/DoubleBufferedConsole.h"
+#include "../Client/SingleBufferedConsole.h"
 #include <thread>
 #include <chrono>
 
@@ -21,10 +21,10 @@ int main()
 	SetConsoleCtrlHandler(ConsoleEventHandler, TRUE);
 	Server.Open();
 
-	CDoubleBufferedConsole Console{ 120, 36, "StringWorld SERVER" };
+	CSingleBufferedConsole Console{ 120, 36, "StringWorld SERVER", ECommandLinePosition::Bottom };
 	Console.SetDefaultForeground(EForegroundColor::LightCyan);
 
-	std::thread thr_net{
+	std::thread ThrNetwork{
 		[&]()
 		{
 			std::chrono::steady_clock Clock{};
@@ -51,7 +51,7 @@ int main()
 		}
 	};
 
-	std::thread thr_input{
+	std::thread ThrInput{
 		[&]()
 		{
 			while (true)
@@ -60,18 +60,17 @@ int main()
 
 				if (Console.HitKey())
 				{
-					int Key{ Console.GetHitKey() };
-					if (Key == VK_RETURN)
+					if (Console.IsHitKey(VK_RETURN))
 					{
-						if (Console.GetCommand())
+						if (Console.ReadCommand())
 						{
 							auto Command{ Console.GetLastCommand() };
-							if (strncmp(Command, "QUIT", 4) == 0)
+							if (Console.IsLastCommand("/quit"))
 							{
 								Server.Close();
 								break;
 							}
-							else if (strncmp(Command, "CLIENTS", 7) == 0)
+							else if (Console.IsLastCommand("/clients"))
 							{
 
 							}
@@ -97,13 +96,10 @@ int main()
 		Console.PrintHString(2, 4, "Number of clients:");
 		Console.PrintHString(21, 4, Server.GetCurrentClientCount());
 
-		Console.PrintCommand(0, 35);
-
 		Console.Render();
 	}
 
-	thr_net.join();
-	thr_input.join();
-
+	ThrNetwork.join();
+	ThrInput.join();
 	return 0;
 }
