@@ -10,6 +10,7 @@
     <ClInclude Include="Client.h" />
     <ClInclude Include="..\Server\SharedDefinitions.h" />
     <ClInclude Include="SingleBufferedConsole.h" />
+    <ClInclude Include="UDPClientBase.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Client.cpp" />

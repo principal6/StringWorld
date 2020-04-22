@@ -3,14 +3,14 @@
 #include <thread>
 #include <chrono>
 
-static CServer Server{};
+static CServer Server{ 9999, timeval{ 1, 0 } };
 
 static BOOL ConsoleEventHandler(DWORD event) {
 
 	switch (event) {
 	case CTRL_C_EVENT:
 	case CTRL_CLOSE_EVENT:
-		Server.CleanUp();
+		Server.Terminate();
 		break;
 	}
 	return TRUE;
@@ -19,12 +19,12 @@ static BOOL ConsoleEventHandler(DWORD event) {
 int main()
 {
 	SetConsoleCtrlHandler(ConsoleEventHandler, TRUE);
-	Server.Open();
 
 	CSingleBufferedConsole Console{ 120, 36, "StringWorld SERVER", ECommandLinePosition::Bottom };
 	Console.SetDefaultForeground(EForegroundColor::LightCyan);
 
-	std::thread ThrNetwork{
+	std::thread ThrUpdate
+	{
 		[&]()
 		{
 			std::chrono::steady_clock Clock{};
@@ -32,12 +32,12 @@ int main()
 			long long PrevSecondTP{ Clock.now().time_since_epoch().count() };
 			while (true)
 			{
-				if (Server.IsClosing()) break;
+				if (Server.IsTerminating()) break;
 
-				Server.Listen();
+				Server.Receive();
 
 				long long Now{ Clock.now().time_since_epoch().count() };
-				if (Now - PrevUpdateTP > 30'000'000) // 30 ms
+				if (Now - PrevUpdateTP > 16'000'000) // 16 ms
 				{
 					Server.Update();
 					PrevUpdateTP = Now;
@@ -51,12 +51,13 @@ int main()
 		}
 	};
 
-	std::thread ThrInput{
+	std::thread ThrInput
+	{
 		[&]()
 		{
 			while (true)
 			{
-				if (Server.IsClosing()) break;
+				if (Server.IsTerminating()) break;
 
 				if (Console.HitKey())
 				{
@@ -67,7 +68,7 @@ int main()
 							auto Command{ Console.GetLastCommand() };
 							if (Console.IsLastCommand("/quit"))
 							{
-								Server.Close();
+								Server.Terminate();
 								break;
 							}
 							else if (Console.IsLastCommand("/clients"))
@@ -83,7 +84,7 @@ int main()
 
 	while (true)
 	{
-		if (Server.IsClosing()) break;
+		if (Server.IsTerminating()) break;
 
 		Console.Clear();
 
@@ -93,13 +94,17 @@ int main()
 		Console.PrintHString(16, 1, Server.GetHostIPString());
 		Console.PrintHString(16, 2, Server.GetServicePort());
 
-		Console.PrintHString(2, 4, "Number of clients:");
-		Console.PrintHString(21, 4, Server.GetCurrentClientCount());
+		Console.PrintHString(2, 4, "     Running time:");
+		Console.PrintHString(2, 5, "Number of clients:");
+		Console.PrintHString(2, 6, "     Update count:");
+		Console.PrintHString(21, 4, Server.GetServerRunningTime());
+		Console.PrintHString(21, 5, Server.GetCurrentClientCount());
+		Console.PrintHString(21, 6, Server.GetUpdateCounter());
 
 		Console.Render();
 	}
 
-	ThrNetwork.join();
+	ThrUpdate.join();
 	ThrInput.join();
 	return 0;
 }

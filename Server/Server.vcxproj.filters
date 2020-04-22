@@ -12,5 +12,6 @@
   <ItemGroup>
     <ClInclude Include="Server.h" />
     <ClInclude Include="SharedDefinitions.h" />
+    <ClInclude Include="UDPServerBase.h" />
   </ItemGroup>
 </Project>

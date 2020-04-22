@@ -45,8 +45,8 @@ enum class EInput : char
 
 struct SClientDatum
 {
-	ID_t ID{ KInvalidID };
-	short X{};
+	ID_t ID{ KInvalidID }; // ServerPacketType
+	short X{}; // ClientCount
 	short Y{};
 	short Padding{};
 };

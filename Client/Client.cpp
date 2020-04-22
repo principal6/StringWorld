@@ -2,7 +2,7 @@
 #include "SingleBufferedConsole.h"
 #include <thread>
 
-static CClient Client{ 9999, timeval{ 2, 0 } };
+static CClient Client{ "192.168.219.200", 9999, timeval{ 2, 0 } };
 
 static BOOL ConsoleEventHandler(DWORD event) {
 
@@ -20,14 +20,6 @@ int main()
 	SetConsoleCtrlHandler(ConsoleEventHandler, TRUE);
 	
 	char Buffer[2048]{};
-	std::cout << "Enter Server IP: ";
-	std::cin >> Buffer;
-	if (!Client.Connect(Buffer))
-	{
-		std::cout << "Failed to connect to the server.\n";
-		return 0;
-	}
-
 	while (true)
 	{
 		std::cout << "Enter your Nickname: ";
@@ -53,24 +45,26 @@ int main()
 	Console.SetClearBackground(EBackgroundColor::Black);
 	Console.SetDefaultForeground(EForegroundColor::LightYellow);
 
-	std::thread thr_listen{
+	std::thread ThrNetwork
+	{
 		[&]()
 		{
 			while (true)
 			{
-				if (Client.IsTimedOut() || Client.IsLeft()) break;
+				if (Client.IsTerminating() || Client.IsTimedOut()) break;
 
-				Client.Listen();
+				Client.Receive();
 			}
 		}
 	};
-
-	std::thread thr_input{
+	
+	std::thread ThrInput
+	{
 		[&]()
 		{
 			while (true)
 			{
-				if (Client.IsTimedOut() || Client.IsLeft()) break;
+				if (Client.IsTerminating() || Client.IsTimedOut()) break;
 
 				if (Console.HitKey())
 				{
@@ -111,15 +105,13 @@ int main()
 
 	while (true)
 	{
-		if (Client.IsTimedOut() || Client.IsLeft()) break;
+		if (Client.IsTerminating() || Client.IsTimedOut()) break;
 
 		Console.Clear();
 
-		//Console.FillBox(5, 5, 7, 10, '~', EBackgroundColor::Cyan, EForegroundColor::White);
 		Console.PrintBox(0, 0, 70, KHeight - 1, ' ', EBackgroundColor::DarkGray, EForegroundColor::Black);
 
 		Console.PrintBox(70, 0, 40, KHeight - 1, ' ', EBackgroundColor::DarkGray, EForegroundColor::Black);
-		//Console.PrintCommandLog(70, 0, 40, 29);		
 		if (Client.HasChatLog())
 		{
 			static constexpr int KMaxLines{ KHeight - 1 - 2 };
@@ -148,7 +140,7 @@ int main()
 			Console.PrintChar(Client.X, Client.Y, '@', EForegroundColor::Yellow);
 		}
 		Console.PrintChar(MyData.X, MyData.Y, '@', EForegroundColor::LightYellow);
-
+		
 		Console.PrintHString(112, 1, "ID");
 		Console.PrintHString(115, 1, Client.GetMyStringID().String);
 
@@ -160,8 +152,7 @@ int main()
 		Console.Render();
 	}
 
-	thr_listen.join();
-	thr_input.join();
-
+	ThrNetwork.join();
+	ThrInput.join();
 	return 0;
 }

@@ -160,6 +160,18 @@ public:
 		PrintHString(X, Y, String.c_str(), (int)String.size());
 	}
 
+	void PrintHString(short X, short Y, unsigned short UShort)
+	{
+		std::string String{ std::to_string((unsigned int)UShort) };
+		PrintHString(X, Y, String.c_str(), (int)String.size());
+	}
+
+	void PrintHString(short X, short Y, size_t SizeT)
+	{
+		std::string String{ std::to_string(SizeT) };
+		PrintHString(X, Y, String.c_str(), (int)String.size());
+	}
+
 public:
 	void PrintVString(short X, short Y, const char* String, WORD Attribute, int StringLength = -1)
 	{
